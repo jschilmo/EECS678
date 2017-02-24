@@ -5,6 +5,8 @@
  * functions that interpret an execute commands.
  *
  * @note As you add things to this file you may want to change the method signature
+ *
+ * @author Jackson Schilmoeller
  */
 
 #include "execute.h"
@@ -31,13 +33,17 @@ IMPLEMENT_DEQUE_STRUCT(pid_queue, pid_t);
 IMPLEMENT_DEQUE(pid_queue, pid_t);  
 
 //Struct for Job
-struct Job{
+typedef struct Job{
 	int job_id;
 	pid_queue pids;
 }Job;
 
 IMPLEMENT_DEQUE_STRUCT(job_queue, struct Job);
 IMPLEMENT_DEQUE(job_queue, struct Job);
+
+job_queue jobs;
+
+static bool instatiateJobQueue = true;
 
 //Declare actual Job queue
 //job_queue* jobs;
@@ -314,7 +320,7 @@ void parent_run_command(Command cmd) {
  *
  * @sa Command CommandHolder
  */
-void create_process(CommandHolder holder, struct Job job) {
+void create_process(CommandHolder holder, Job *job) {
 	// Read the flags field from the parser
 	bool p_in  = holder.flags & PIPE_IN;
 	bool p_out = holder.flags & PIPE_OUT;
@@ -374,13 +380,18 @@ void create_process(CommandHolder holder, struct Job job) {
 		}
 		nextPipe = (nextPipe + 1) % 2;
 		prevPipe = (prevPipe + 1) % 2;
-		push_front_pid_queue(&job.pids, pid);
+		push_front_pid_queue(&job->pids, pid);
 		parent_run_command(holder.cmd);
 	}
 }
 
 // Run a list of commands
 void run_script(CommandHolder* holders) {
+	if(instatiateJobQueue){
+		jobs = new_job_queue(1);
+		instatiateJobQueue = false;
+	}
+	
 	if (holders == NULL){
 		return;
 	}
@@ -394,21 +405,21 @@ void run_script(CommandHolder* holders) {
 	}
 
 	CommandType type;
-	struct Job job;
+	Job job;
 	job.pids = new_pid_queue(1);
 
 	// Run all commands in the `holder` array
 	for (int i = 0; (type = get_command_holder_type(holders[i])) != EOC; ++i){
-		create_process(holders[i], job);
+		create_process(holders[i], &job);
 	}
 
 	if (!(holders[0].flags & BACKGROUND)) {
 		// Not a background Job
-		// TODO: Wait for all processes under the job to complete
+		// DONE: Wait for all processes under the job to complete
 		while(!is_empty_pid_queue(&job.pids)){
 			pid_t tempPid = pop_front_pid_queue(&job.pids);
-			int waitPid;
-			waitpid(tempPid, &waitPid, 0);
+			int wait;
+			waitpid(tempPid, &wait, 0);
 		}
 	}
 	else {
