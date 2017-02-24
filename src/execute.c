@@ -26,27 +26,24 @@
 #define IMPLEMENT_ME()                                                  \
   fprintf(stderr, "IMPLEMENT ME: %s(line %d): %s()\n", __FILE__, __LINE__, __FUNCTION__);
   
+//Define queues for Jobs and Processes
+IMPLEMENT_DEQUE_STRUCT(pid_queue, pid_t);
+IMPLEMENT_DEQUE(pid_queue, pid_t);  
+
 //Struct for Job
 struct Job{
 	int job_id;
-	Command cmd;
-	const char* command;
-	int nPid;
-	pid_t* pid;
+	pid_queue pids;
 }Job;
-
-//Define queues for Jobs and Processes
-IMPLEMENT_DEQUE_STRUCT(pid_queue, pid_t);
-IMPLEMENT_DEQUE(pid_queue, pid_t);
 
 IMPLEMENT_DEQUE_STRUCT(job_queue, struct Job);
 IMPLEMENT_DEQUE(job_queue, struct Job);
 
 //Declare actual Job queue
-job_queue* jobs;
+//job_queue* jobs;
 
 //And Declare pid queue
-pid_queue pids;
+//pid_queue pids;
 
 //Pipe globals
 static int pipes[2][2];
@@ -317,7 +314,7 @@ void parent_run_command(Command cmd) {
  *
  * @sa Command CommandHolder
  */
-void create_process(CommandHolder holder, pid_queue pids) {
+void create_process(CommandHolder holder, struct Job job) {
 	// Read the flags field from the parser
 	bool p_in  = holder.flags & PIPE_IN;
 	bool p_out = holder.flags & PIPE_OUT;
@@ -368,9 +365,7 @@ void create_process(CommandHolder holder, pid_queue pids) {
 		exit(0);
 	}
 	else{
-		//wait for children to finish
-		//int wait;
-		//waitpid(-1, &wait, 0);
+
 		if(p_in){
 			close(pipes[prevPipe][0]);
 		}
@@ -379,7 +374,7 @@ void create_process(CommandHolder holder, pid_queue pids) {
 		}
 		nextPipe = (nextPipe + 1) % 2;
 		prevPipe = (prevPipe + 1) % 2;
-		//push_front_pid_queue(&pids, pid);
+		push_front_pid_queue(&job.pids, pid);
 		parent_run_command(holder.cmd);
 	}
 }
@@ -399,17 +394,22 @@ void run_script(CommandHolder* holders) {
 	}
 
 	CommandType type;
-	//struct Job job;
-	pids = new_pid_queue(sizeof(holders)/sizeof(holders[0]));
+	struct Job job;
+	job.pids = new_pid_queue(1);
 
 	// Run all commands in the `holder` array
 	for (int i = 0; (type = get_command_holder_type(holders[i])) != EOC; ++i){
-		create_process(holders[i], pids);
+		create_process(holders[i], job);
 	}
 
 	if (!(holders[0].flags & BACKGROUND)) {
 		// Not a background Job
 		// TODO: Wait for all processes under the job to complete
+		while(!is_empty_pid_queue(&job.pids)){
+			pid_t tempPid = pop_front_pid_queue(&job.pids);
+			int waitPid;
+			waitpid(tempPid, &waitPid, 0);
+		}
 	}
 	else {
 		// A background job.
@@ -418,4 +418,6 @@ void run_script(CommandHolder* holders) {
 		// TODO: Once jobs are implemented, uncomment and fill the following line
 		// print_job_bg_start(job_id, pid, cmd);
 	}
+	
+	destroy_pid_queue(&job.pids);
 }
